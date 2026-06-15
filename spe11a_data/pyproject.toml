@@ -1,0 +1,12 @@
+[project]
+name = "spe11a-data"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyopmspe11",
+]
+
+[tool.uv.sources]
+pyopmspe11 = { git = "https://github.com/OPM/pyopmspe11" }
