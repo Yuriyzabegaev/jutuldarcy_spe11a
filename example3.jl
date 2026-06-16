@@ -20,6 +20,7 @@
 # Generate the deck before running this script:
 #   cd examples/workflow/spe11a_data && uv run pyopmspe11 -i input.toml -m deck -o output
 
+println("Loading packages and defining units/paths...")
 using Jutul, JutulDarcy, GeoEnergyIO
 using HYPRE
 using GLMakie
@@ -35,6 +36,7 @@ deck_path = joinpath(deck_dir, "OUTPUT.DATA")
 # ## Parse the facies map from FLUXNUM.INC
 # GeoEnergyIO does not support FLUXNUM or EQUALREG, so we parse the run-length
 # encoded integer file directly to get one facies index per cell.
+println("Parsing facies map from FLUXNUM.INC...")
 function parse_eclipse_rle_int(filepath)
     values = Int[]
     open(filepath) do f
@@ -68,6 +70,7 @@ phi_tab = [0.44, 0.43, 0.44, 0.45, 0.43, 0.46, seal_poro]
 # ## Parse the SPE11a saturation-function tables
 # The generated deck writes the benchmark constitutive laws in SGWFN as
 # [Sg, krg, krw, pc] with pc in METRIC deck pressure units (bar).
+println("Parsing SPE11a saturation-function tables...")
 function parse_sgwfn_tables(filepath)
     tables = Matrix{Float64}[]
     rows = Vector{Float64}[]
@@ -106,6 +109,7 @@ sgwfn_tables = parse_sgwfn_tables(joinpath(deck_dir, "TABLES.INC"))
 # ## Register OPM-specific keywords for the parser to skip
 # We only need the grid geometry from the deck, so we skip the keywords that
 # GeoEnergyIO does not understand and inject our own per-cell properties below.
+println("Registering deck keywords to skip during parsing...")
 let skip = GeoEnergyIO.InputParser.skip_kw!
     skip(:DISGASW, 0)
     skip(:VAPWAT, 0)
@@ -119,6 +123,7 @@ let skip = GeoEnergyIO.InputParser.skip_kw!
 end
 
 # ## Parse the deck and inject facies-based properties
+println("Parsing deck and injecting facies-based porosity/permeability...")
 data = parse_data_file(deck_path)
 n_cells = length(facies)
 poro_full = [phi_tab[facies[c]] for c in 1:n_cells]
@@ -139,6 +144,7 @@ full_mesh = physical_representation(full_domain)
 # (see above), so it remains a well-posed barrier rather than a set of isolated,
 # non-flowing cells. Setting `active = 1:n_cells` makes the downstream submesh
 # indexing (`active[...]`, `searchsortedfirst(active, ...)`) a no-op.
+println("Keeping all cells active and building the reservoir domain...")
 active = collect(1:n_cells)
 mesh = full_mesh
 
@@ -159,6 +165,7 @@ domain = reservoir_domain(mesh, permeability=perm, porosity=poro, diffusion=diff
 # (180,1,43) (upper). We map them onto the active cell ordering via the logical
 # (i,j,k) index; with all cells active this mapping is the identity, but it stays
 # correct if cells are ever dropped again.
+println("Locating SPE11a injection cells and creating wells...")
 inj_ijk = [(91, 1, 101), (180, 1, 43)]
 nc_full = number_of_cells(full_mesh)
 inj_full = [findfirst(c -> cell_ijk(full_mesh, c) == ijk, 1:nc_full) for ijk in inj_ijk]
@@ -172,6 +179,7 @@ injectors = [
 # ## Miscible CO2-brine model with SPE11a constitutive laws
 # The :co2brine model uses the CSP11/SPE11 H2O-CO2 property tables and K-values,
 # so dissolved CO2 in brine and vaporized water in CO2 are represented.
+println("Setting up the miscible CO2-brine model and constitutive laws...")
 domain[:temperature] = fill(20.0 + 273.15, number_of_cells(domain))
 model = setup_reservoir_model(domain, :co2brine,
     wells=injectors,
@@ -225,6 +233,7 @@ set_secondary_variables!(
 # ## Initial state: domain initially contains hydrostatic brine
 # SPE11a datum pressure is 1.1 bar (input.toml `pressure`), with the datum at the
 # top of the rig; pressure increases hydrostatically with depth below it.
+println("Initializing hydrostatic brine state...")
 depth = domain[:cell_centroids][3, :]
 p0 = 1.1 * bar .+ depth .* Jutul.gravity_constant .* 998.39   # 1.1 bar datum + hydrostatic
 state0 = setup_reservoir_state(model, Pressure=p0, OverallMoleFractions=[1.0, 0.0])
@@ -235,6 +244,7 @@ state0 = setup_reservoir_state(model, Pressure=p0, OverallMoleFractions=[1.0, 0.
 # (2.5–5 h); both are shut for the post-injection monitoring phase. We use three
 # force periods with report steps aligned at the 2.5 h and 5 h boundaries:
 # 10-minute steps while injecting, 1-hour steps during monitoring.
+println("Building the 120-hour SPE11a time schedule...")
 dt_well1 = fill(10.0 * 60.0, 15)   # 0.0–2.5 h: Well 1 only
 dt_both = fill(10.0 * 60.0, 15)    # 2.5–5.0 h: Well 1 + Well 2
 dt_post = fill(1.0 * hour, 115)    # 5.0–120.0 h: post-injection monitoring
@@ -245,6 +255,7 @@ nstep = length(dt)
 # The top layer (k = 1) is the open free-flow boundary; the other three sides
 # remain no-flow. The boundary transmissibility is computed automatically from the
 # cell permeability and size with `dir = :z`.
+println("Applying the open top pressure boundary condition...")
 top_cells = [c for c in 1:number_of_cells(mesh) if cell_ijk(mesh, c)[3] == 1]
 p_bc = 1.115 * bar   # SPE11a free-flow BC (deck BCPROP: DIRICHLET WATER, 1.115 bar)
 bc = flow_boundary_condition(top_cells, domain, p_bc; dir=:z, fractional_flow=[1.0, 0.0])
@@ -253,6 +264,7 @@ bc = flow_boundary_condition(top_cells, domain, p_bc; dir=:z, fractional_flow=[1
 # Each single-perforation well injects pure CO2 at the SPE11a mass rate from
 # `input.toml` (1.7e-7 kg/s each). A mass-rate target preserves the kg/s value
 # directly. Well 1 injects for the whole 5 h; Well 2 only during the second half.
+println("Configuring injection controls and report-step forces...")
 mass_rate = 1.7e-7 * kg
 injector_control = InjectorControl(
     TotalMassRateTarget(mass_rate),
@@ -283,6 +295,7 @@ parameters = setup_parameters(model)
 # aggregation, avoiding its coarse-grid SVD path.
 # Each report-step state is stored as JLD2. On later runs, restart=true reloads
 # a completed simulation or resumes from the latest state on disk.
+println("Running the reservoir simulation...")
 output_path = joinpath(@__DIR__, "example3")
 ws, states = simulate_reservoir(state0, model, dt,
     forces=forces,
@@ -332,6 +345,7 @@ ws, states = simulate_reservoir(state0, model, dt,
 # trapped) / dissolved CO2 inventories; the seal groups carry all CO2 within the
 # low-permeability facies. `co2_inventory` does the per-cell mass partitioning
 # (mobile vs residual via the critical gas saturation, plus dissolved CO2).
+println("Computing SPE11a sparse-data diagnostics and plots...")
 fipnum_full = parse_eclipse_rle_int(joinpath(deck_dir, "FIPNUM.INC"))
 fipnum = fipnum_full[active]   # one value per active (submesh) cell
 
@@ -474,6 +488,7 @@ lines!(ax_sgt, t_min, max.(inv_top.total, 1e-30))
 fig_sparse
 
 # ## Plot vapor saturation at three time points
+println("Plotting vapor saturation at three selected time points...")
 fig = Figure(size=(1000, 900))
 steps_to_plot = [nstep ÷ 4, nstep ÷ 2, nstep]
 plt = nothing
@@ -492,10 +507,12 @@ fig
 # As in the `co2_sloped.jl` example, `plot_reservoir` opens an interactive
 # viewer with a time slider (and a play button) that animates the result
 # through every report step. Pick `:Saturations` to follow the vapor plume.
+println("Opening the interactive saturation movie...")
 plot_reservoir(model, states, key=:Saturations, step=nstep)
 
 
 # ## Plot permeability (log10, mD) to show the retained heterogeneity
+println("Plotting log10 permeability to show retained heterogeneity...")
 perm_log = log10.(max.(perm ./ mD, 1e-3))
 fig_k, ax_k, plt_k = plot_cell_data(mesh, perm_log, colormap=:viridis)
 ax_k.azimuth[] = 1.5π
