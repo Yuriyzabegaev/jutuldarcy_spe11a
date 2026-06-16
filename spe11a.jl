@@ -273,16 +273,23 @@ injector_control = InjectorControl(
 )
 shut = DisabledControl()
 
-# `set_default_limits=false`: each injector uses a `TotalMassRateTarget`, whose
-# auto-generated default operating limit is `mrat`. JutulDarcy's well-limit check
-# does not handle an `mrat` limit, so it would error on the first step. The default
-# is only a self-limit equal to the target value and can never bind here (the wells
-# have no competing constraint), so disabling default limits is behaviour-neutral.
-forces_well1 = setup_reservoir_forces(model, bc=bc, set_default_limits=false,
+# Work around a JutulDarcy limitation in `check_well_limit` for injectors:
+# every well control gets an automatic operating limit derived from its target via
+# `as_limit`. For a `TotalMassRateTarget` that limit is `mrat`, which the injector
+# limit-check does not handle, so the run errors on the first step. The limit is
+# regenerated from the target inside `update_before_step_multimodel!` regardless of
+# `set_default_limits`, so it cannot be suppressed through `setup_reservoir_forces`.
+# The `mrat` entry is only ever a self-limit equal to the target value and has no
+# competing constraint to switch to, so dropping it is behaviour-neutral. We make
+# `as_limit` return no limit for a `TotalMassRateTarget` (the proper fix is to add
+# `mrat` handling in JutulDarcy's `check_well_limit`).
+JutulDarcy.as_limit(::JutulDarcy.TotalMassRateTarget) = (;)
+
+forces_well1 = setup_reservoir_forces(model, bc=bc,
     control=Dict(:Injector1 => injector_control, :Injector2 => shut))
-forces_both = setup_reservoir_forces(model, bc=bc, set_default_limits=false,
+forces_both = setup_reservoir_forces(model, bc=bc,
     control=Dict(:Injector1 => injector_control, :Injector2 => injector_control))
-forces_post = setup_reservoir_forces(model, bc=bc, set_default_limits=false,
+forces_post = setup_reservoir_forces(model, bc=bc,
     control=Dict(:Injector1 => shut, :Injector2 => shut))
 
 # One forces entry per report step, matching the three periods of the schedule.
