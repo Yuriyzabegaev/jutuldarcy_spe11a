@@ -337,28 +337,21 @@ ws, states = simulate_reservoir(state0, model, dt,
     ))
 
 # ## SPE11a sparse-data reporting
-# Reconstruct the SPE11a "sparse data" time series so the results can be compared
-# against the benchmark. The pyopmspe11 deck encodes the reporting regions in
-# FIPNUM.INC: box A = {2, 4, 5, 8}, box B = {3, 6}, box-A seal = {5, 8},
-# box-B seal = {6}, remaining seal = {7, 9}, with the pressure observation points
-# POP1 = 8 and POP2 = 9. Boxes A/B carry the mobile / immobile (residually
-# trapped) / dissolved CO2 inventories; the seal groups carry all CO2 within the
-# low-permeability facies. `co2_inventory` does the per-cell mass partitioning
-# (mobile vs residual via the critical gas saturation, plus dissolved CO2).
-println("Computing SPE11a sparse-data diagnostics and plots...")
+# Reconstruct the SPE11a "sparse data" panels used in the benchmark overview:
+# POP1 pressure, CO2 in sealing units, mobile/dissolved CO2 in boxes A/B, and the
+# Box C convection metric. The pyopmspe11 deck encodes these regions in FIPNUM.
+println("Plotting SPE11a sparse-data benchmark panels...")
 fipnum_full = parse_eclipse_rle_int(joinpath(deck_dir, "FIPNUM.INC"))
 fipnum = fipnum_full[active]   # one value per active (submesh) cell
 
 cells_with(codes) = findall(in(codes), fipnum)
 boxA_cells = cells_with((2, 4, 5, 8))
 boxB_cells = cells_with((3, 6))
-boxA_seal_cells = cells_with((5, 8))
-boxB_seal_cells = cells_with((6,))
 seal_cells = cells_with((5, 6, 7, 8, 9))
+boxC_cells = cells_with((4,))
 pop1_cell = only(cells_with((8,)))
-pop2_cell = only(cells_with((9,)))
 
-t_min = cumsum(dt) ./ 60.0
+t_hr = cumsum(dt) ./ hour
 
 # Per-cell CO2 mass partitioning, replicating JutulDarcy's `co2_inventory` logic
 # (we can't call it directly here because the custom `RelativePermeabilities`
@@ -393,130 +386,114 @@ function co2_series(cells)
     return (mobile=mob, residual=res, dissolved=diss, total=mob .+ res .+ diss)
 end
 
-# Cumulative injected CO2 mass from the well results (mass-balance reference).
-co2_rate = zeros(nstep)
-for (_, wres) in pairs(ws.wells)
-    co2_rate .+= abs.(wres[:CO2_mass_rate])
-end
-injected = cumsum(co2_rate .* dt)
-
-inv_dom = co2_series(1:nc)
 inv_A = co2_series(boxA_cells)
 inv_B = co2_series(boxB_cells)
-inv_sealA = co2_series(boxA_seal_cells)
-inv_sealB = co2_series(boxB_seal_cells)
 inv_sealT = co2_series(seal_cells)
 
-# Pressure response relative to the initial (t=0) hydrostatic state `p0`. The
-# absolute pressures look flat because the open top pins them near hydrostatic;
-# the perturbation from injection is tiny, so we plot Δp to reveal it.
-dp1 = [states[s][:Pressure][pop1_cell] - p0[pop1_cell] for s in 1:nstep]
-dp2 = [states[s][:Pressure][pop2_cell] - p0[pop2_cell] for s in 1:nstep]
+# The Box C convection metric follows pyopmspe11's sparse-data definition for
+# SPE11a: sum of dissolved-CO2 concentration jumps across x/z faces, weighted by
+# the opposite cell dimensions. It has units of length [m].
+nx = maximum(cell_ijk(mesh, c)[1] for c in 1:nc)
+ny = maximum(cell_ijk(mesh, c)[2] for c in 1:nc)
+stride_z = nx * ny
+boxC_mask = fipnum .== 4
+boxC_x_cells = findall(c -> c > 1 && boxC_mask[c-1], 1:nc)
+boxC_z_cells = findall(c -> c + stride_z <= nc && boxC_mask[c+stride_z], 1:nc)
+dx = data["GRID"]["DX"][active]
+dz = data["GRID"]["DZ"][active]
 
-# Boundary efflux diagnostic: the only sink is the open top, so the missing CO2
-# (injected − in-domain) must have left through it. We also track the CO2 that
-# has reached the top boundary row of cells, and the peak gas saturation there.
-loss = injected .- inv_dom.total
-inv_top = co2_series(top_cells)
-sg_top_max = [maximum(states[s][:Saturations][2, c] for c in top_cells) for s in 1:nstep]
+function boxC_convection(step)
+    # Use dissolved CO2 in the liquid phase as the local concentration proxy.
+    X = states[step][:LiquidMassFractions][co2_idx, :]
+    xcw = X ./ max(maximum(X), eps())
+    dxv = abs.(xcw[boxC_x_cells] .- xcw[boxC_cells])
+    dzv = abs.(xcw[boxC_z_cells] .- xcw[boxC_cells])
+    return sum(dxv .* dz[boxC_cells] .+ dzv .* dx[boxC_cells])
+end
 
-fig_sparse = Figure(size=(1100, 1300))
+p_pop1 = [states[s][:Pressure][pop1_cell] for s in 1:nstep]
+m_c = [boxC_convection(s) for s in 1:nstep]
 
-ax_p = Axis(fig_sparse[1, 1], xlabel="time [min]", ylabel="Δpressure from t=0 [Pa]",
-    title="Observation-point pressure response")
-lines!(ax_p, t_min, dp1, label="POP1")
-lines!(ax_p, t_min, dp2, label="POP2")
-axislegend(ax_p)
+fig_sparse = Figure(size=(1200, 1500))
 
-ax_dom = Axis(fig_sparse[1, 2], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    title="Whole-domain CO2 inventory")
-lines!(ax_dom, t_min, inv_dom.mobile, label="mobile")
-lines!(ax_dom, t_min, inv_dom.residual, label="immobile")
-lines!(ax_dom, t_min, inv_dom.dissolved, label="dissolved")
-axislegend(ax_dom, position=:lt)
+ax_p = Axis(fig_sparse[1, 1], xscale=log10, ylabel="pressure [Pa]", title="POP 1")
+lines!(ax_p, t_hr, p_pop1, label="p1")
 
-ax_a = Axis(fig_sparse[2, 1], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    title="Box A CO2 inventory")
-lines!(ax_a, t_min, inv_A.mobile, label="mobA")
-lines!(ax_a, t_min, inv_A.residual, label="immA")
-lines!(ax_a, t_min, inv_A.dissolved, label="dissA")
-axislegend(ax_a, position=:lt)
+ax_seal = Axis(fig_sparse[1, 2], xscale=log10, yaxisposition=:right,
+    ylabel="mass [kg]", title="CO2 in sealing units")
+lines!(ax_seal, t_hr, inv_sealT.total, label="sealTot")
 
-ax_b = Axis(fig_sparse[2, 2], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    title="Box B CO2 inventory")
-lines!(ax_b, t_min, inv_B.mobile, label="mobB")
-lines!(ax_b, t_min, inv_B.residual, label="immB")
-lines!(ax_b, t_min, inv_B.dissolved, label="dissB")
-axislegend(ax_b, position=:lt)
+ax_moba = Axis(fig_sparse[2, 1], xscale=log10, ylabel="mass [kg]",
+    title="Box A: mobile gaseous CO2")
+lines!(ax_moba, t_hr, inv_A.mobile, label="mobA")
 
-ax_seal = Axis(fig_sparse[3, 1], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    title="CO2 in seal facies")
-lines!(ax_seal, t_min, inv_sealA.total, label="sealA")
-lines!(ax_seal, t_min, inv_sealB.total, label="sealB")
-lines!(ax_seal, t_min, inv_sealT.total, label="sealTot")
-axislegend(ax_seal, position=:lt)
+ax_dissa = Axis(fig_sparse[2, 2], xscale=log10, yaxisposition=:right, ylabel="mass [kg]",
+    title="Box A: dissolved CO2")
+lines!(ax_dissa, t_hr, inv_A.dissolved, label="dissA")
 
-# Authoritative in-domain CO2 mass straight from the solver's TotalMasses, to
-# check my phase-reconstructed `inv_dom.total` (which uses a static pore volume).
-# If this overlaps `injected`, there is no real loss and my reconstruction
-# undercounts; if it overlaps `inv_dom.total`, CO2 genuinely left the domain.
-co2_tm = [sum(states[s][:TotalMasses][co2_idx, :]) for s in 1:nstep]
+ax_mobb = Axis(fig_sparse[3, 1], xscale=log10, xlabel="time [h]", ylabel="mass [kg]",
+    title="Box B: mobile gaseous CO2")
+lines!(ax_mobb, t_hr, inv_B.mobile, label="mobB")
 
-ax_mb = Axis(fig_sparse[3, 2], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    title="Mass balance")
-lines!(ax_mb, t_min, injected, label="injected")
-lines!(ax_mb, t_min, co2_tm, label="in domain (TotalMasses)")
-# lines!(ax_mb, t_min, inv_dom.total, label="in domain (reconstructed)")
-axislegend(ax_mb, position=:lt)
+ax_mc = Axis(fig_sparse[3, 2], xscale=log10, yaxisposition=:right, xlabel="time [h]",
+    ylabel="M [m]", title="Box C: convection")
+lines!(ax_mc, t_hr, m_c, label="M")
 
-# Diagnostic #1: confirm the missing mass left through the open top boundary, and
-# that it coincides with CO2 reaching the top row of cells.
-ax_loss = Axis(fig_sparse[4, 1], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    title="Top-boundary CO2 efflux")
-lines!(ax_loss, t_min, loss, label="injected − in domain")
-lines!(ax_loss, t_min, inv_top.total, label="CO2 in top row")
-axislegend(ax_loss, position=:lt)
-
-# The top row holds only a *trace* dissolved CO2 (continuously flushed out by the
-# displaced brine), invisible on a linear kg axis — so we show it on a log scale.
-# Peak gas saturation there is exactly 0 (`sg_top_max`), i.e. no free gas reaches
-# the top seal: the efflux is dissolved CO2 carried out by brine, not free gas.
-ax_sgt = Axis(fig_sparse[4, 2], xlabel="time [min]", ylabel="CO2 mass [kg]",
-    yscale=log10, title="CO2 in top row (log scale)")
-lines!(ax_sgt, t_min, max.(inv_top.total, 1e-30))
+for ax in (ax_p, ax_seal, ax_moba, ax_dissa, ax_mobb, ax_mc)
+    xlims!(ax, 0.1, maximum(t_hr))
+end
 
 fig_sparse
 
-# ## Plot vapor saturation at three time points
-println("Plotting vapor saturation at three selected time points...")
-fig = Figure(size=(1000, 900))
-steps_to_plot = [nstep ÷ 4, nstep ÷ 2, nstep]
-plt = nothing
-for (row, step) in enumerate(steps_to_plot)
-    time_hr = round(sum(dt[1:step]) / hour, digits=2)
-    ax = Axis3(fig[row, 1], title="Vapor saturation, hour $time_hr")
-    global plt = plot_cell_data!(ax, mesh, states[step][:Saturations][2, :],
-        colorrange=(0.0, 1.0), colormap=:viridis)
-    ax.azimuth[] = 1.5π
-    ax.elevation[] = 0.0
-end
-Colorbar(fig[:, 2], plt, label="Vapor saturation [-]")
-fig
+# %%
+# Plot domain CO2 partitioning by phase and mobility
+println("Plotting dissolved, mobile vapor, and immobile vapor CO2...")
+inv_domain = co2_series(1:nc)
 
-# ## Interactive movie of all time steps
-# As in the `co2_sloped.jl` example, `plot_reservoir` opens an interactive
-# viewer with a time slider (and a play button) that animates the result
-# through every report step. Pick `:Saturations` to follow the vapor plume.
-println("Opening the interactive saturation movie...")
-plot_reservoir(model, states, key=:Saturations, step=nstep)
+fig_co2_partition = Figure(size=(900, 500))
+ax_co2_partition = Axis(fig_co2_partition[1, 1],
+    xscale=log10,
+    xlabel="time [h]",
+    ylabel="CO2 mass [kg]",
+    title="CO2 partitioning in the domain"
+)
+lines!(ax_co2_partition, t_hr, inv_domain.dissolved, label="liquid phase (dissolved)")
+lines!(ax_co2_partition, t_hr, inv_domain.mobile, label="vapor phase (mobile)")
+lines!(ax_co2_partition, t_hr, inv_domain.residual, label="vapor phase (immobile)")
+xlims!(ax_co2_partition, 0.1, maximum(t_hr))
+axislegend(ax_co2_partition, position=:lt)
+fig_co2_partition
 
+# %%
+# Plot result in interactive viewer
+# If you have interactive plotting available, you can explore all timesteps
+# in the model output interactively.
+plot_reservoir(model, states)
 
-# ## Plot permeability (log10, mD) to show the retained heterogeneity
-println("Plotting log10 permeability to show retained heterogeneity...")
-perm_log = log10.(max.(perm ./ mD, 1e-3))
-fig_k, ax_k, plt_k = plot_cell_data(mesh, perm_log, colormap=:viridis)
-ax_k.azimuth[] = 1.5π
-ax_k.elevation[] = 0.0
-ax_k.title = "log10 permeability [mD]"
-Colorbar(fig_k[1, 2], plt_k)
-fig_k
+# %%
+# Plot total injected CO2 mass and total CO2 component mass in the domain
+println("Plot total injected CO2 mass...")
+injected_rate = [
+    s <= length(dt_well1) ? mass_rate :
+    s <= length(dt_well1) + length(dt_both) ? 2.0 * mass_rate :
+    0.0
+    for s in 1:nstep
+]
+injected_mass = cumsum(injected_rate .* dt)
+
+total_co2_mass = [
+    sum(states[s][:TotalMasses][2, :])
+    for s in 1:nstep
+]
+
+fig_mass = Figure(resolution=(900, 500))
+ax_mass = Axis(fig_mass[1, 1],
+    xscale=log10,
+    xlabel="time [h]",
+    ylabel="mass [kg]",
+    title="Injected CO2 mass and total CO2 mass in domain"
+)
+lines!(ax_mass, t_hr, injected_mass, label="injected CO2 mass")
+lines!(ax_mass, t_hr, total_co2_mass, label="domain CO2 mass")
+axislegend(ax_mass, position=:rb)
+fig_mass
