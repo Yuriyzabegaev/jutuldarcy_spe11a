@@ -15,17 +15,20 @@ You need JutulDarcy installed: https://github.com/sintefmath/JutulDarcy.jl
 
 The git commit the script is tested with: 
 
-```julia --project=../JutulDarcy.jl
+```
+julia --project=../JutulDarcy.jl
 ```
 
 Before running the simulation, install dependencies in Julia REPL: 
-```import Pkg
+```
+import Pkg
 Pkg.add("GLMakie")
 Pkg.add("SpecialFunctions")
 ```
 
 Run the simulation:
-```import("spe11a.jl")
+```
+import("spe11a.jl")
 ```
 
 After the simulation is finished, it reports sparse data and animates solution.
