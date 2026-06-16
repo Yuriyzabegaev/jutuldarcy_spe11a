@@ -273,11 +273,16 @@ injector_control = InjectorControl(
 )
 shut = DisabledControl()
 
-forces_well1 = setup_reservoir_forces(model, bc=bc,
+# `set_default_limits=false`: each injector uses a `TotalMassRateTarget`, whose
+# auto-generated default operating limit is `mrat`. JutulDarcy's well-limit check
+# does not handle an `mrat` limit, so it would error on the first step. The default
+# is only a self-limit equal to the target value and can never bind here (the wells
+# have no competing constraint), so disabling default limits is behaviour-neutral.
+forces_well1 = setup_reservoir_forces(model, bc=bc, set_default_limits=false,
     control=Dict(:Injector1 => injector_control, :Injector2 => shut))
-forces_both = setup_reservoir_forces(model, bc=bc,
+forces_both = setup_reservoir_forces(model, bc=bc, set_default_limits=false,
     control=Dict(:Injector1 => injector_control, :Injector2 => injector_control))
-forces_post = setup_reservoir_forces(model, bc=bc,
+forces_post = setup_reservoir_forces(model, bc=bc, set_default_limits=false,
     control=Dict(:Injector1 => shut, :Injector2 => shut))
 
 # One forces entry per report step, matching the three periods of the schedule.
@@ -296,7 +301,7 @@ parameters = setup_parameters(model)
 # Each report-step state is stored as JLD2. On later runs, restart=true reloads
 # a completed simulation or resumes from the latest state on disk.
 println("Running the reservoir simulation...")
-output_path = joinpath(@__DIR__, "example3")
+output_path = joinpath(@__DIR__, "spe11a")
 ws, states = simulate_reservoir(state0, model, dt,
     forces=forces,
     parameters=parameters,
