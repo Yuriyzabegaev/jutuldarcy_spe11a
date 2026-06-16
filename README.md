@@ -13,8 +13,7 @@ The simulation deck data is generated with [pyopmspe11](https://github.com/OPM/p
 
 You need JutulDarcy installed: https://github.com/sintefmath/JutulDarcy.jl
 
-The git commit the script is tested with: 
-
+The git commit the script is tested with: `f863de78d6ec946bb046f8a967e6ebb14ddab3a9`. Assuming that JutulDarcy folder is in the parent directory:
 ```
 julia --project=../JutulDarcy.jl
 ```
