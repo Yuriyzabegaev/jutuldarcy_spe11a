@@ -6,17 +6,19 @@ I configured this setup within a single day with substential usage of LLM Agents
 
 The simulation deck data is generated with [pyopmspe11](https://github.com/OPM/pyopmspe11). The simulation runs on the reporting grid.
 
-# Known limitations:
+# Known limitations
 - `dispersion` keyword from the deck is ignored.
 
 # Run it
 
 Generate the deck before running this script (you need `uv` installed):
-`cd spe11a_data && uv run pyopmspe11 -i input.toml -m deck -o output`
+```
+cd spe11a_data && uv run pyopmspe11 -i input.toml -m deck -o output
+```
 
 You need JutulDarcy installed: https://github.com/sintefmath/JutulDarcy.jl
 
-The git commit the script is tested with: `f863de78d6ec946bb046f8a967e6ebb14ddab3a9`. Assuming that JutulDarcy folder is in the parent directory:
+The JutulDarcy git commit the script is tested with: `f863de78d6ec946bb046f8a967e6ebb14ddab3a9`. Assuming that JutulDarcy folder is in the parent directory:
 ```
 julia --project=../JutulDarcy.jl
 ```
