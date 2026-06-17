@@ -24,11 +24,14 @@ println("Loading packages and defining units/paths...")
 using Jutul, JutulDarcy, GeoEnergyIO
 using HYPRE
 using GLMakie
+using Printf: @sprintf
 using SpecialFunctions: erf
 
 Darcy, bar, kg, meter, day = si_units(:darcy, :bar, :kilogram, :meter, :day)
 mD = 1e-3 * Darcy
 hour = 3600.0   # seconds
+
+scientific_tick_labels(values) = [@sprintf("%.1e", v) for v in values]
 
 deck_dir = joinpath(@__DIR__, "spe11a_data", "output", "deck")
 deck_path = joinpath(deck_dir, "OUTPUT.DATA")
@@ -428,26 +431,30 @@ m_c = [boxC_convection(s) for s in 1:nstep]
 
 fig_sparse = Figure(size=(1200, 1500))
 
-ax_p = Axis(fig_sparse[1, 1], xscale=log10, ylabel="pressure [Pa]", title="POP 1")
+ax_p = Axis(fig_sparse[1, 1], xscale=log10, ytickformat=scientific_tick_labels,
+    ylabel="pressure [Pa]", title="POP 1")
 lines!(ax_p, t_hr, p_pop1, label="p1")
 
-ax_seal = Axis(fig_sparse[1, 2], xscale=log10, yaxisposition=:right,
+ax_seal = Axis(fig_sparse[1, 2], xscale=log10, ytickformat=scientific_tick_labels, yaxisposition=:right,
     ylabel="mass [kg]", title="CO2 in sealing units")
 lines!(ax_seal, t_hr, inv_sealT.total, label="sealTot")
 
-ax_moba = Axis(fig_sparse[2, 1], xscale=log10, ylabel="mass [kg]",
+ax_moba = Axis(fig_sparse[2, 1], xscale=log10, ytickformat=scientific_tick_labels, ylabel="mass [kg]",
     title="Box A: mobile gaseous CO2")
 lines!(ax_moba, t_hr, inv_A.mobile, label="mobA")
 
-ax_dissa = Axis(fig_sparse[2, 2], xscale=log10, yaxisposition=:right, ylabel="mass [kg]",
+ax_dissa = Axis(fig_sparse[2, 2], xscale=log10, ytickformat=scientific_tick_labels,
+    yaxisposition=:right, ylabel="mass [kg]",
     title="Box A: dissolved CO2")
 lines!(ax_dissa, t_hr, inv_A.dissolved, label="dissA")
 
-ax_mobb = Axis(fig_sparse[3, 1], xscale=log10, xlabel="time [h]", ylabel="mass [kg]",
+ax_mobb = Axis(fig_sparse[3, 1], xscale=log10, ytickformat=scientific_tick_labels,
+    xlabel="time [h]", ylabel="mass [kg]",
     title="Box B: mobile gaseous CO2")
 lines!(ax_mobb, t_hr, inv_B.mobile, label="mobB")
 
-ax_mc = Axis(fig_sparse[3, 2], xscale=log10, yaxisposition=:right, xlabel="time [h]",
+ax_mc = Axis(fig_sparse[3, 2], xscale=log10, ytickformat=scientific_tick_labels,
+    yaxisposition=:right, xlabel="time [h]",
     ylabel="M [m]", title="Box C: convection")
 lines!(ax_mc, t_hr, m_c, label="M")
 
@@ -465,6 +472,7 @@ inv_domain = co2_series(1:nc)
 fig_co2_partition = Figure(size=(900, 500))
 ax_co2_partition = Axis(fig_co2_partition[1, 1],
     xscale=log10,
+    ytickformat=scientific_tick_labels,
     xlabel="time [h]",
     ylabel="CO2 mass [kg]",
     title="CO2 partitioning in the domain"
@@ -501,6 +509,7 @@ total_co2_mass = [
 fig_mass = Figure(resolution=(900, 500))
 ax_mass = Axis(fig_mass[1, 1],
     xscale=log10,
+    ytickformat=scientific_tick_labels,
     xlabel="time [h]",
     ylabel="mass [kg]",
     title="Injected CO2 mass and total CO2 mass in domain"
