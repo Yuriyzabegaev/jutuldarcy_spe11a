@@ -21,6 +21,7 @@ julia --project=../JutulDarcy.jl
 Before running the simulation, install dependencies in Julia REPL: 
 ```
 import Pkg
+Pkg.add("HYPRE")
 Pkg.add("GLMakie")
 Pkg.add("SpecialFunctions")
 ```
