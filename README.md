@@ -11,8 +11,8 @@ The simulation deck data is generated with [pyopmspe11](https://github.com/OPM/p
 
 # Run it
 
-Generate the deck before running this script:
-`cd examples/workflow/spe11a_data && uv run pyopmspe11 -i input.toml -m deck -o output`
+Generate the deck before running this script (you need `uv` installed):
+`cd spe11a_data && uv run pyopmspe11 -i input.toml -m deck -o output`
 
 You need JutulDarcy installed: https://github.com/sintefmath/JutulDarcy.jl
 
