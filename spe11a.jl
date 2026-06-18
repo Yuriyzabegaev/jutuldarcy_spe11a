@@ -477,6 +477,31 @@ end
 fig_sparse
 
 # %%
+# Plot POP1 and POP2 pressure
+println("Plotting POP1 and POP2 pressure...")
+pop2_cell = only(cells_with((9,)))
+p_pop2 = [states[s][:Pressure][pop2_cell] for s in 1:nstep]
+pop_yticks = [1.15, 1.155, 1.160, 1.165, 1.17, 1.175, 1.18] .* 1e5
+pop_yticklabels = ["1.150e5", "1.155e5", "1.160e5", "1.165e5", "1.170e5", "1.175e5", "1.180e5"]
+
+fig_pop = Figure(size=(900, 500))
+ax_pop = Axis(fig_pop[1, 1],
+    xscale=log10,
+    xlabel="time [h]",
+    ylabel="pressure [Pa]",
+    title="POP 1 and POP 2")
+lines!(ax_pop, t_hr, p_pop1, label="POP 1")
+lines!(ax_pop, t_hr, p_pop2, label="POP 2")
+ylims!(ax_pop, 1.149e5, 1.181e5)
+ax_pop.yticks = (pop_yticks, pop_yticklabels)
+xlims!(ax_pop, 0.1, maximum(t_hr))
+ax_pop.xminorticksvisible = true
+ax_pop.xminorticks = IntervalsBetween(9)
+axislegend(ax_pop, position=:lt)
+
+fig_pop
+
+# %%
 # Plot domain CO2 partitioning by phase and mobility
 println("Plotting dissolved, mobile vapor, and immobile vapor CO2...")
 inv_domain = co2_series(1:nc)
