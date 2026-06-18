@@ -96,8 +96,8 @@ function parse_sgwfn_tables(filepath)
                     continue
                 end
                 push!(rows, [parse(Float64, token)])
-                if length(rows) >= 4 && all(length(r) == 1 for r in rows[end-3:end])
-                    vals = vcat(rows[end-3:end]...)
+                if length(rows) >= 4 && all(length(r) == 1 for r in rows[(end-3):end])
+                    vals = vcat(rows[(end-3):end]...)
                     resize!(rows, length(rows) - 4)
                     push!(rows, vals)
                 end
@@ -438,28 +438,40 @@ lines!(ax_p, t_hr, p_pop1, label="p1")
 ax_seal = Axis(fig_sparse[1, 2], xscale=log10, ytickformat=scientific_tick_labels, yaxisposition=:right,
     ylabel="mass [kg]", title="CO2 in sealing units")
 lines!(ax_seal, t_hr, inv_sealT.total, label="sealTot")
+ylims!(ax_seal, -2e-5, 7.2e-4)
+ax_seal.yticks = 0:1e-4:7e-4
 
 ax_moba = Axis(fig_sparse[2, 1], xscale=log10, ytickformat=scientific_tick_labels, ylabel="mass [kg]",
     title="Box A: mobile gaseous CO2")
 lines!(ax_moba, t_hr, inv_A.mobile, label="mobA")
+ylims!(ax_moba, -1e-4, 1.1e-3)
+ax_moba.yticks = 0:2e-4:1e-3
 
 ax_dissa = Axis(fig_sparse[2, 2], xscale=log10, ytickformat=scientific_tick_labels,
     yaxisposition=:right, ylabel="mass [kg]",
     title="Box A: dissolved CO2")
 lines!(ax_dissa, t_hr, inv_A.dissolved, label="dissA")
+ylims!(ax_dissa, -1e-4, 2.1e-3)
+ax_dissa.yticks = 0:5e-4:2e-3
 
 ax_mobb = Axis(fig_sparse[3, 1], xscale=log10, ytickformat=scientific_tick_labels,
     xlabel="time [h]", ylabel="mass [kg]",
     title="Box B: mobile gaseous CO2")
 lines!(ax_mobb, t_hr, inv_B.mobile, label="mobB")
+ylims!(ax_mobb, -1e-5, 4.5e-4)
+ax_mobb.yticks = 0:1e-4:4e-4
 
 ax_mc = Axis(fig_sparse[3, 2], xscale=log10, ytickformat=scientific_tick_labels,
     yaxisposition=:right, xlabel="time [h]",
     ylabel="M [m]", title="Box C: convection")
 lines!(ax_mc, t_hr, m_c, label="M")
+ylims!(ax_mc, -1, 16)
+ax_mc.yticks = 0:2.5:15
 
 for ax in (ax_p, ax_seal, ax_moba, ax_dissa, ax_mobb, ax_mc)
     xlims!(ax, 0.1, maximum(t_hr))
+    ax.xminorticksvisible = true
+    ax.xminorticks = IntervalsBetween(9)
 end
 
 fig_sparse
