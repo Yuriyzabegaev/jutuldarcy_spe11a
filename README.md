@@ -37,3 +37,9 @@ import("spe11a.jl")
 ```
 
 After the simulation is finished, it reports sparse data and animates solution.
+
+# Results
+
+The figure compares this reproduction with the results reported by the participants in the SPE11 comparative study (Nordbotten et al., 2025). Most quantities of interest fall within the range of the participants' results and show the same qualitative behavior, including the timing of the CO₂ breakthrough into Box B and the sealing units. The exception is the pressure at observation point POP 1, which is higher than the reported range.
+
+![Comparison with the SPE11 case A results](figures/comparison.png)
